@@ -5,43 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
-<title>Private demo</title>
+<title></title>
 <style>
-  :root { --ink: #1c1c1c; --muted: #6b7280; --line: #d1d5db; --lav: #cfc9ff; --purple: #7a73f7; --navy: #0b1b26; --err: #b91c1c; }
+  :root { color-scheme: light dark; --bg: #f5f5f5; --field: #fff; --line: #d4d4d4; --ink: #171717; --btn: #262626; --btn-ink: #fff; --bad: #dc2626; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111; --field: #1c1c1c; --line: #3a3a3a; --ink: #eee; --btn: #e5e5e5; --btn-ink: #111; } }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f3f4f6; color: var(--ink); display: grid; place-items: center; padding: 16px; }
-  .gate { width: min(400px, 100%); background: #fff; border-radius: 16px; box-shadow: 0 20px 50px #0b1b2626, 0 0 0 1px #0b1b260d; padding: 28px 26px 24px; visibility: hidden; }
-  html.ready .gate { visibility: visible; }
-  .lock { width: 44px; height: 44px; border-radius: 12px; background: var(--navy); color: #f5b041; display: grid; place-items: center; margin-bottom: 14px; }
-  .lock svg { width: 22px; height: 22px; }
-  h1 { font-size: 20px; margin: 0 0 6px; }
-  p { margin: 0 0 18px; color: var(--muted); font-size: 14.5px; line-height: 1.5; }
-  label.pw { display: block; font-size: 13.5px; font-weight: 600; margin-bottom: 6px; }
-  input[type=password] { width: 100%; height: 46px; border: 1px solid var(--line); border-radius: 10px; padding: 0 14px; font-size: 16px; }
-  input[type=password]:focus { outline: 2px solid var(--lav); border-color: var(--purple); }
-  .rm { display: flex; gap: 8px; align-items: center; font-size: 13.5px; color: var(--muted); margin: 12px 0 16px; }
-  button { width: 100%; height: 46px; border: 0; border-radius: 10px; background: var(--purple); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer; }
-  button[disabled] { opacity: .6; cursor: default; }
-  #err { color: var(--err); font-size: 13.5px; margin: 12px 0 0; min-height: 1em; }
-  .fine { font-size: 12px; margin: 14px 0 0; }
+  body { background: var(--bg); display: grid; place-items: center; padding: 16px; font: 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  form { display: flex; gap: 8px; width: min(320px, 100%); visibility: hidden; }
+  html.ready form { visibility: visible; }
+  input { flex: 1; min-width: 0; height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); font-size: 16px; }
+  input:focus { outline: none; border-color: var(--ink); }
+  input[aria-invalid="true"] { border-color: var(--bad); animation: shake .3s; }
+  button { flex: none; width: 44px; height: 44px; border: 0; border-radius: 10px; background: var(--btn); color: var(--btn-ink); display: grid; place-items: center; cursor: pointer; }
+  button[disabled] { opacity: .5; cursor: progress; }
+  button svg { width: 20px; height: 20px; }
+  @keyframes shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
 </style>
 </head>
 <body>
-<main class="gate" id="gate">
-  <div class="lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
-  <h1>Private demo</h1>
-  <p>This demo is private. Enter the password to open it.</p>
-  <form id="f" autocomplete="off">
-    <label class="pw" for="pw">Password</label>
-    <input type="password" id="pw" autocomplete="current-password" required autofocus>
-    <label class="rm"><input type="checkbox" id="rm" checked> Remember on this device</label>
-    <button id="go" type="submit">Open</button>
-    <p id="err" role="alert"></p>
-  </form>
-  <p class="fine">Ask the person who shared this link for the password.</p>
-</main>
-<noscript><p style="text-align:center">This demo needs JavaScript.</p></noscript>
+<form id="f" autocomplete="off">
+  <input type="password" id="pw" aria-label="Password" autocomplete="current-password" required autofocus>
+  <button id="go" type="submit" aria-label="Submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+</form>
 <script>
 (async function () {
   'use strict';
@@ -63,28 +49,27 @@
     if (document.readyState === 'complete') setTimeout(r, 0);
     else addEventListener('load', () => setTimeout(r, 0), { once: true });
   });
-  const stores = () => { const s = []; try { s.push(localStorage, sessionStorage); } catch (e) { /* storage blocked: ask every time */ } return s; };
   let saved = null;
-  for (const s of stores()) { try { saved = saved || s.getItem(KEY); } catch (e) { /* ignore */ } }
+  try { saved = localStorage.getItem(KEY); } catch (e) { /* storage blocked: ask every time */ }
   if (saved) {
     let html = null;
-    try { html = await unlock(bytes(saved)); } catch (e) { for (const s of stores()) { try { s.removeItem(KEY); } catch (x) { /* ignore */ } } }
+    try { html = await unlock(bytes(saved)); } catch (e) { try { localStorage.removeItem(KEY); } catch (x) { /* ignore */ } }
     if (html !== null) { await loaded(); show(html); return; }
   }
   document.documentElement.classList.add('ready');
-  const pw = document.getElementById('pw'); const go = document.getElementById('go'); const err = document.getElementById('err');
+  const pw = document.getElementById('pw'); const go = document.getElementById('go');
+  pw.addEventListener('input', () => pw.removeAttribute('aria-invalid'));
   document.getElementById('f').addEventListener('submit', async (e) => {
     e.preventDefault();
-    go.disabled = true; go.textContent = 'Opening...'; err.textContent = '';
+    go.disabled = true;
     try {
       const bits = await derive(pw.value);
       const html = await unlock(bits);
-      const keep = document.getElementById('rm').checked ? stores() : stores().slice(1);
-      for (const s of keep) { try { s.setItem(KEY, text(bits)); } catch (x) { /* ignore */ } }
+      try { localStorage.setItem(KEY, text(bits)); } catch (x) { /* ignore */ }
       show(html);
     } catch (x) {
-      err.textContent = "That password didn't work. Check it and try again.";
-      go.disabled = false; go.textContent = 'Open'; pw.select();
+      pw.removeAttribute('aria-invalid'); void pw.offsetWidth; pw.setAttribute('aria-invalid', 'true');
+      go.disabled = false; pw.select();
     }
   });
 })();
