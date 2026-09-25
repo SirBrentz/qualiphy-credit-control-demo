@@ -49,16 +49,19 @@
 
   /* ------------------------------------------------------------------ demo charges */
   const CT = D.CHARGE_TYPES;
-  function mk(examId, days, type, status, extra, hour) {
-    const t = CT[type];
-    return Object.assign({ id: 'ch_' + examId, date: daysAgo(days, hour == null ? 8 + (examId % 9) : hour), examId, type, description: t.description, amount: t.amount, status }, extra || {});
+  const LOCS = D.LOCATIONS; const MAIN = LOCS[0]; const SM = LOCS[1] || LOCS[0];
+  /* Exam fee and medication are separate, as in Export Billing. Each charge belongs to a location (clinic)
+     and carries the patient profile ID support searches by, since exam IDs aren't searchable yet. */
+  function mk(examId, days, type, status, extra, hour, loc) {
+    const t = CT[type]; const l = loc || MAIN;
+    return Object.assign({ id: 'ch_' + examId, date: daysAgo(days, hour == null ? 8 + (examId % 9) : hour), examId, profileId: 80000 + ((examId * 37) % 9000), clinicId: l.id, clinicName: l.name, type, description: t.description, examFee: t.fee, medication: t.med, amount: round2(t.fee + t.med), status }, extra || {});
   }
   /* Settled history every normal scenario shares: 24 paid charges over about ten weeks, so Billing has pages. */
   function history() {
-    const out = [[6, 48127, 'gfe'], [8, 48061, 'rx'], [9, 48022, 'gfe'], [13, 47788, 'gfe'], [15, 47701, 'rx'], [20, 47405, 'uc']].map(([d, id, ty]) => mk(id, d, ty, 'paid'));
+    const out = [[6, 48127, 'gfe'], [8, 48061, 'rx', SM], [9, 48022, 'gfe'], [13, 47788, 'gfe', SM], [15, 47701, 'rx'], [20, 47405, 'uc']].map(([d, id, ty, loc]) => mk(id, d, ty, 'paid', null, null, loc));
     const types = ['gfe', 'rx', 'gfe', 'uc', 'rx', 'gfe'];
     let id = 47350;
-    for (let i = 0; i < 18; i++) { id -= 17 + ((i * 7) % 23); out.push(mk(id, 22 + i * 3, types[i % types.length], 'paid')); }
+    for (let i = 0; i < 18; i++) { id -= 17 + ((i * 7) % 23); out.push(mk(id, 22 + i * 3, types[i % types.length], 'paid', null, null, i % 3 === 1 ? SM : MAIN)); }
     return out;
   }
   /* A clinic whose card expired months ago: 300 unpaid charges when the controls go live, older ones with collections. */
@@ -97,9 +100,9 @@
   function fresh(sc) {
     const scenario = SC_BY[sc] ? sc : D.DEFAULT_SCENARIO;
     return {
-      v: 1, scenario, page: 'billing',
+      v: 2, scenario, page: 'billing',
       charges: buildCharges(scenario), card: buildCard(scenario), lastPayment: null,
-      bill: { tab: 'all', page: 1, range: { preset: 'all', from: '', to: '' }, rangeOpen: false, draft: null },
+      bill: { tab: 'all', loc: 'all', page: 1, range: { preset: 'all', from: '', to: '' }, rangeOpen: false, draft: null },
       invite: { type: 'gfe', exam: D.EXAMS_BY_TYPE.gfe[0], state: D.STATE_OPTIONS[0] },
       modal: null, drawer: false, notes: true, guide: true,
     };
@@ -109,7 +112,7 @@
     try {
       const raw = localStorage.getItem(KEY); if (!raw) return null;
       const s = JSON.parse(raw);
-      return s && s.v === 1 && Array.isArray(s.charges) && s.bill && SC_BY[s.scenario] ? Object.assign(s, { modal: null, drawer: false }) : null;
+      return s && s.v === 2 && Array.isArray(s.charges) && s.bill && SC_BY[s.scenario] ? Object.assign(s, { modal: null, drawer: false }) : null;
     } catch (e) { return null; }
   }
   let saveTimer = null;
@@ -139,7 +142,8 @@
   }
   const inRange = (c, b) => !b || (c.date >= b.from && c.date < b.to + DAY);
   const byTab = (c, tab) => (tab === 'unpaid' ? isOpen(c) : tab === 'paid' ? !isOpen(c) : true);
-  const billRows = () => { const b = rangeBounds(S.bill.range); return S.charges.filter((c) => byTab(c, S.bill.tab) && inRange(c, b)); };
+  const atLoc = (c, loc) => !loc || loc === 'all' || c.clinicId === Number(loc);
+  const billRows = () => { const b = rangeBounds(S.bill.range); return S.charges.filter((c) => byTab(c, S.bill.tab) && inRange(c, b) && atLoc(c, S.bill.loc)); };
   function rangeLabel(r) {
     const b = rangeBounds(r);
     return b ? `${longDate(b.from)} - ${longDate(b.to)}` : `${longDate(earliest())} - ${longDate(TODAY)}`;
@@ -150,7 +154,7 @@
     const n = D.LIMITS.retryHours.length;
     if (c.status === 'retrying') return ['Retrying', `Declined (${c.reason}). Automatic retry ${c.attempts} of ${n}${c.nextRetry ? ` on ${shortDate(c.nextRetry)}` : ''}.`];
     if (c.status === 'unpaid') return ['Unpaid', `All ${n} automatic retries failed (${c.reason}).`];
-    if (c.status === 'collections') return ['In collections', 'With our collections team. Paying your balance settles it.'];
+    if (c.status === 'collections') return ['In collections', 'With our billing team. Paying your balance settles it.'];
     if (c.status === 'collected') return ['Paid', c.paidOn ? `Paid ${shortDate(c.paidOn)} with your updated card.` : ''];
     return ['Paid', ''];
   }
@@ -176,13 +180,13 @@
     const b = rangeBounds(S.bill.range);
     const fromSettings = from === 'settings';
     const r = fromSettings ? { from: TODAY - 6 * DAY, to: TODAY } : b || { from: Math.max(earliest(), fromIso(D.LIMITS.exportFrom)), to: TODAY };
-    S.modal = { kind: 'export', from: iso(r.from), to: iso(r.to), include: fromSettings ? 'all' : S.bill.tab, origin: fromSettings ? 'settings' : 'billing', error: '' };
+    S.modal = { kind: 'export', from: iso(r.from), to: iso(r.to), include: fromSettings ? 'all' : S.bill.tab, loc: fromSettings ? 'all' : (S.bill.loc || 'all'), origin: fromSettings ? 'settings' : 'billing', error: '' };
   }
-  const exportRows = (m) => (isIso(m.from) && isIso(m.to) ? S.charges.filter((c) => byTab(c, m.include) && inRange(c, { from: fromIso(m.from), to: fromIso(m.to) })) : []);
+  const exportRows = (m) => (isIso(m.from) && isIso(m.to) ? S.charges.filter((c) => byTab(c, m.include) && inRange(c, { from: fromIso(m.from), to: fromIso(m.to) }) && atLoc(c, m.loc)) : []);
   function toCsv(rows) {
     const q = (v) => { const s = String(v == null ? '' : v); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-    const head = ['Date', 'Exam ID', 'Description', 'Amount', 'Status', 'Automatic attempts', 'Decline reason', 'Paid on'];
-    const lines = rows.slice().sort((a, b) => a.date - b.date).map((c) => [iso(c.date), c.examId, c.description, c.amount.toFixed(2), statusCell(c)[0], c.attempts || '', c.reason || '', c.paidOn ? iso(c.paidOn) : ''].map(q).join(','));
+    const head = ['Date', 'Clinic ID', 'Location', 'Exam ID', 'Patient Profile ID', 'Description', 'Exam fee', 'Medication', 'Total', 'Status', 'Automatic attempts', 'Decline reason', 'Paid on'];
+    const lines = rows.slice().sort((a, b) => a.date - b.date).map((c) => [iso(c.date), c.clinicId, c.clinicName, c.examId, c.profileId, c.description, c.examFee.toFixed(2), c.medication.toFixed(2), c.amount.toFixed(2), statusCell(c)[0], c.attempts || '', c.reason || '', c.paidOn ? iso(c.paidOn) : ''].map(q).join(','));
     return [head.join(','), ...lines].join('\r\n') + '\r\n';
   }
   function download(name, text) {
@@ -292,48 +296,60 @@
     const vis = pages <= 3 ? Array.from({ length: pages }, (_, i) => i + 1) : page === 1 ? [1, 2, 3] : page === pages ? [pages - 2, pages - 1, pages] : [page - 1, page, page + 1];
     return `<div class="pgn" id="billing-pager"><span class="showing">Showing ${start.toLocaleString('en-US')} to ${end.toLocaleString('en-US')} of ${entries.toLocaleString('en-US')} entries</span><div class="pages">${page > 1 ? `<button class="arr l" data-act="pg" data-p="${page - 1}" aria-label="Previous page">&lsaquo;</button>` : ''}${vis.map((p) => `<button class="${p === page ? 'on' : ''}${page === 1 && p === 1 ? ' first' : ''}" data-act="pg" data-p="${p}"${p === page ? ' aria-current="page"' : ''}>${p}</button>`).join('')}${page < pages ? `<button class="arr r" data-act="pg" data-p="${page + 1}" aria-label="Next page">&rsaquo;</button>` : ''}</div></div>`;
   }
+  /* What each status means, in the clinic's words (Support asked how collections differs from unpaid). */
+  const STATUS_KEY = [['retrying', 'Retrying', 'The charge failed and another automatic attempt is scheduled.'], ['unpaid', 'Unpaid', "All automatic attempts failed. It's part of your balance."], ['collections', 'In collections', 'Our billing team is collecting it directly. Paying your balance settles it.'], ['paid', 'Paid', 'Charged successfully.']];
+  const statusKey = () => `<div class="st-key" id="billing-status-key">${STATUS_KEY.map(([k, l, t]) => `<span><span class="chip ${k}">${l}</span>${esc(t)}</span>`).join('')}</div>`;
   function chargeRow(c) {
     const [chip, note] = statusCell(c);
-    return `<tr class="${isOpen(c) ? 'open' : ''}"><td class="nw">${shortDate(c.date)}</td><td class="nw">#${c.examId}</td><td>${esc(c.description)}</td><td class="r tnum">${money(c.amount)}</td><td><div class="st"><span class="chip ${c.status}">${chip}</span>${note ? `<small>${esc(note)}</small>` : ''}</div></td></tr>`;
+    return `<tr class="${isOpen(c) ? 'open' : ''}"><td class="nw">${shortDate(c.date)}</td><td class="loc">${esc(c.clinicName)}<small>Clinic ID ${c.clinicId}</small></td><td class="nw">Exam ${c.examId}<small>Patient profile ${c.profileId}</small></td><td class="desc">${esc(c.description)}</td><td class="r tnum">${money(c.examFee)}</td><td class="r tnum">${c.medication ? money(c.medication) : '-'}</td><td class="r tnum tot">${money(c.amount)}</td><td><div class="st"><span class="chip ${c.status}">${chip}</span>${note ? `<small>${esc(note)}</small>` : ''}</div></td></tr>`;
   }
   const supportLine = (id) => `<p class="support"${id ? ` id="${id}"` : ''}>If you need more clarification on these charges, please contact <a href="#" data-act="mail">${esc(SP.support || 'support')}</a>.</p>`;
   function viewBilling() {
-    const sc = S.scenario; const open = openCharges(); const bal = balance(); const b = S.bill;
+    const sc = S.scenario; const b = S.bill; const loc = b.loc || 'all'; const multi = LOCS.length > 1;
+    const open = openCharges().filter((c) => atLoc(c, loc)); const bal = round2(open.reduce((s, c) => s + c.amount, 0));
+    const locName = loc === 'all' ? '' : (LOCS.find((l) => String(l.id) === String(loc)) || {}).name || '';
     const status = sc === 'ok'
       ? `<div class="bnr ok" role="status" id="billing-status"><div class="b-l">${I('BsCheckCircleFill')}<span><b>Account active.</b> Your account is in good standing.</span></div></div>`
       : banner(true);
     const tone = sc === 'retrying' ? 'warn' : 'stop';
     const balSub = open.length
-      ? `${count(open.length, sc === 'retrying' ? 'failed charge' : 'unpaid charge')}, oldest from ${shortDate(oldestOpen())}`
-      : S.lastPayment ? `Last payment ${money(S.lastPayment.amount)} on ${shortDate(S.lastPayment.at)}` : 'Nothing owed';
-    const card = S.card;
+      ? `${count(open.length, sc === 'retrying' ? 'failed charge' : 'unpaid charge')}, oldest from ${shortDate(open[open.length - 1].date)}`
+      : S.lastPayment && String(loc) !== String(SM.id) ? `Last payment ${money(S.lastPayment.amount)} on ${shortDate(S.lastPayment.at)}` : 'Nothing owed';
+    const cardOf = (id) => (String(id) === String(MAIN.id) ? S.card : ((LOCS.find((l) => String(l.id) === String(id)) || {}).card || S.card));
+    const declinedAt = (id) => String(id) === String(MAIN.id) && S.card.declined && S.charges.some((x) => x.clinicId === id && isOpen(x));
+    const one = loc === 'all' ? MAIN : (LOCS.find((l) => String(l.id) === String(loc)) || MAIN);
+    const card = cardOf(one.id);
+    const cardBox = loc === 'all' && multi
+      ? `<span class="k">Cards on file</span><ul class="cardlist">${LOCS.map((l) => { const c = cardOf(l.id); return `<li><span><b>${esc(l.name)}</b> <span class="muted">(Clinic ID ${l.id})</span></span><span class="cl">${I('BsCreditCard2Front')} ${esc(c.brand)} ending ${esc(c.last4)} ${declinedAt(l.id) ? `<span class="bad">Declined ${shortDate(S.card.declined.on)}</span>` : '<span class="good">Working</span>'}</span></li>`; }).join('')}</ul>`
+      : `<span class="k">Card on file</span><span class="cardline">${I('BsCreditCard2Front')} ${esc(card.brand)} ending ${esc(card.last4)} <span class="exp">expires ${esc(card.exp)}</span></span>
+        ${String(one.id) === String(MAIN.id) && S.card.declined ? `<span class="bad">Declined ${shortDate(S.card.declined.on)} (${esc(S.card.declined.reason)})</span>` : '<span class="good">Working</span>'}`;
     const cards = `<div class="bill-cards">
-      <section class="bcard" id="billing-balance"><span class="k">Balance due</span><span class="bal${bal > 0 ? ' ' + tone : ''}">${money(bal)}</span><span class="sub">${esc(balSub)}</span></section>
-      <section class="bcard" id="billing-card"><span class="k">Card on file</span><span class="cardline">${I('BsCreditCard2Front')} ${esc(card.brand)} ending ${esc(card.last4)} <span class="exp">expires ${esc(card.exp)}</span></span>
-        ${card.declined ? `<span class="bad">Declined ${shortDate(card.declined.on)} (${esc(card.declined.reason)})</span>` : '<span class="good">Working</span>'}
+      <section class="bcard" id="billing-balance"><span class="k">Balance due${multi ? (loc === 'all' ? ', all locations' : `, ${esc(locName)}`) : ''}</span><span class="bal${bal > 0 ? ' ' + tone : ''}">${money(bal)}</span><span class="sub">${esc(balSub)}</span></section>
+      <section class="bcard" id="billing-card">${cardBox}
         <button class="btn btn-outline btn-sm" data-act="card" data-reason="update" id="btn-update-card">Update card</button></section></div>`;
     const rows = billRows();
     const pages = Math.max(1, Math.ceil(rows.length / PER)); const page = Math.min(Math.max(1, b.page), pages);
     const slice = rows.slice((page - 1) * PER, page * PER);
     const tabs = [['all', 'All'], ['unpaid', `Unpaid${open.length ? ` (${open.length.toLocaleString('en-US')})` : ''}`], ['paid', 'Paid']];
     const total = round2(rows.reduce((s, c) => s + c.amount, 0));
-    const filtered = b.tab !== 'all' || b.range.preset !== 'all';
+    const filtered = b.tab !== 'all' || b.range.preset !== 'all' || loc !== 'all';
     const charges = `<section class="ch" style="display:flex;flex-direction:column;gap:14px">
       <div class="ch-head"><h2>Charges</h2><div class="tabs-boxed" role="tablist" aria-label="Filter charges">${tabs.map(([id, l]) => `<button role="tab" class="${b.tab === id ? 'on' : ''}" aria-selected="${b.tab === id}" data-act="tab" data-tab="${id}" id="tab-${id}">${esc(l)}</button>`).join('')}</div></div>
-      <div class="ch-filters"><div class="ch-actions"><div class="fld"><span>Date Range: ${I('FaInfoCircle')}</span>${rangePicker()}</div><button class="btn btn-primary" data-act="export" id="btn-export">${I('BsDownload')} Export</button></div>
+      <div class="ch-filters"><div class="ch-actions">${multi ? `<div class="fld"><span>Location:</span><select class="sel" id="bill-loc" data-bind="bill.loc" data-rerender><option value="all"${loc === 'all' ? ' selected' : ''}>All locations (${LOCS.length})</option>${LOCS.map((l) => `<option value="${l.id}"${String(loc) === String(l.id) ? ' selected' : ''}>${esc(l.name)} (Clinic ID ${l.id})</option>`).join('')}</select></div>` : ''}<div class="fld"><span>Date Range: ${I('FaInfoCircle')}</span>${rangePicker()}</div><button class="btn btn-primary" data-act="export" id="btn-export">${I('BsDownload')} Export</button></div>
         <div class="ch-count" id="ch-count"><b>${count(rows.length, 'charge')}</b>, ${money(total)}${filtered ? ` <button class="link" data-act="clear-filters" style="margin-left:6px">Clear filters</button>` : ''}</div></div>
-      <div class="ctbl-wrap"><table class="ctbl" id="billing-charges"><thead><tr><th>Date</th><th>Exam</th><th>Description</th><th class="r">Amount</th><th>Status</th></tr></thead>
-        <tbody>${slice.length ? slice.map(chargeRow).join('') : `<tr class="empty"><td colspan="5">No ${b.tab === 'all' ? '' : b.tab + ' '}charges in this date range.</td></tr>`}</tbody></table></div>
+      <div class="ctbl-wrap"><table class="ctbl" id="billing-charges"><thead><tr><th>Date</th><th>Location</th><th>Exam / Patient Profile ID</th><th>Description</th><th class="r">Exam fee</th><th class="r">Medication</th><th class="r">Total</th><th>Status</th></tr></thead>
+        <tbody>${slice.length ? slice.map(chargeRow).join('') : `<tr class="empty"><td colspan="8">No ${b.tab === 'all' ? '' : b.tab + ' '}charges in this date range.</td></tr>`}</tbody></table></div>
+      ${statusKey()}
       ${rows.length ? pagination(page, pages, rows.length) : ''}
       ${supportLine('billing-support')}</section>`;
     const L = D.LIMITS;
     const howto = `<section class="howto" id="billing-howto"><h3>How billing works</h3><ul>
-      <li>Each exam is charged to your card on file.</li>
+      <li>Each exam is charged to the card on file for the location that sent it. The exam fee and any medication are listed separately.</li>
       <li>If a charge fails, we retry it automatically after ${L.retryHours.slice(0, -1).join(', ')} and ${L.retryHours[L.retryHours.length - 1]} hours.</li>
-      <li>If it's still unpaid, prescription exams pause. At ${L.failureCount} unpaid charges or ${money(L.dollarLimit).replace('.00', '')} owed, sending new exams pauses.</li>
+      <li>Charges that stay unpaid can pause prescription exams, and then new exams, until your balance is paid.</li>
       <li>Paying your balance turns everything back on right away. Exams already in progress always finish.</li></ul>
       <p>Need a spreadsheet? Use <b>Export</b> above for any date range. Export Billing in <button class="link" data-act="go" data-page="settings">Settings</button> still works too.</p></section>`;
-    const notes = dnote('Added after the first review', '<b>Pages:</b> 10 charges per page, with the page control the portal already uses on Medication Management. <b>Export:</b> the date range and the tab filter what you see, and Export downloads exactly that, in every status. <b>Support line</b> under the table.', 'billing-note');
+    const notes = dnote('Added after the first review', '<b>Pages:</b> 10 charges per page, with the page control the portal already uses on Medication Management. <b>Export:</b> the date range and the tab filter what you see, and Export downloads exactly that, in every status. <b>Support line</b> under the table. <b>From Support:</b> a location filter with each Clinic ID, exam and patient profile IDs, the exam fee and medication as separate amounts, a key for the statuses, and no pause thresholds in what clinics read.', 'billing-note');
     return shell(top('Billing', 'FaFileInvoiceDollar'), `${status}${notes}${cards}${charges}${howto}`);
   }
 
@@ -524,7 +540,7 @@
       b.range = { preset: 'custom', from: dr.from, to: dr.to }; b.rangeOpen = false; b.draft = null; b.page = 1;
     },
     'range-cancel'() { S.bill.rangeOpen = false; S.bill.draft = null; },
-    'clear-filters'() { S.bill.tab = 'all'; S.bill.range = { preset: 'all', from: '', to: '' }; S.bill.page = 1; },
+    'clear-filters'() { S.bill.tab = 'all'; S.bill.loc = 'all'; S.bill.range = { preset: 'all', from: '', to: '' }; S.bill.page = 1; },
     export(d) { openExport(d.from === 'settings' ? 'settings' : 'billing'); },
     generate() {
       const m = S.modal; if (!m || m.kind !== 'export') return false;

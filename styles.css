@@ -99,7 +99,7 @@ code { font-family: var(--mono); font-size: .92em; }
 .bnr .b-r { display: flex; gap: 8px; align-items: center; flex: none; flex-wrap: wrap; }
 .chip { display: inline-flex; align-items: center; border-radius: 999px; padding: 1px 8px; font-size: 12px; font-weight: 600; white-space: nowrap; width: max-content; }
 .chip.unpaid { background: var(--rose-100); color: var(--rose-800); }
-.chip.collections { background: var(--rose-200); color: var(--rose-900); }
+.chip.collections { background: var(--rose-700); color: #fff; }
 .chip.retrying { background: var(--amb-100); color: var(--amb-800); }
 .chip.paid, .chip.collected { background: var(--grn-100); color: var(--grn-800); }
 .chip.new { background: var(--purple); color: #fff; font-size: 11px; padding: 1px 7px; }
@@ -183,12 +183,23 @@ code { font-family: var(--mono); font-size: .92em; }
 .drp-pop .pop-f { display: flex; justify-content: flex-end; gap: 8px; }
 
 .ctbl-wrap { overflow-x: auto; border: 1px solid var(--line-2); border-radius: 8px; }
-.ctbl { width: 100%; min-width: 660px; border-collapse: collapse; font-size: 15px; }
-.ctbl th { background: var(--ground-2); text-transform: uppercase; font-size: 12px; font-weight: 700; color: #374151; text-align: left; padding: 14px 16px; letter-spacing: .02em; white-space: nowrap; }
+.ctbl { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 14px; }
+.ctbl th { background: var(--ground-2); text-transform: uppercase; font-size: 12px; font-weight: 700; color: #374151; text-align: left; padding: 12px 10px; letter-spacing: .02em; white-space: nowrap; }
 .ctbl th.r, .ctbl td.r { text-align: right; }
-.ctbl td { padding: 14px 16px; border-top: 1px solid var(--line); vertical-align: middle; }
+.ctbl td { padding: 12px 10px; border-top: 1px solid var(--line); vertical-align: middle; }
 .ctbl tr.open td { background: #fff7f8; }
 .ctbl td.nw { white-space: nowrap; }
+.ctbl td small { display: block; font-size: 12px; color: var(--muted); }
+.ctbl td.loc { min-width: 130px; max-width: 170px; }
+.ctbl td.desc { min-width: 120px; max-width: 180px; }
+.ctbl td.tot { font-weight: 700; }
+.st-key { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 12.5px; color: var(--cell); }
+.st-key > span { display: inline-flex; gap: 8px; align-items: center; }
+.bcard .cardlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.bcard .cardlist li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; }
+.bcard .cardlist .cl { display: inline-flex; gap: 6px; align-items: center; }
+.bcard .cardlist .cl .pi { width: 16px; height: 16px; }
+#bill-loc { min-width: 260px; }
 .ctbl .st { display: flex; flex-direction: column; gap: 4px; }
 .ctbl .st small { font-size: 12px; color: var(--muted); max-width: 380px; line-height: 1.4; }
 .ctbl .empty td { text-align: center; color: var(--muted); padding: 32px; }

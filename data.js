@@ -7,9 +7,15 @@
 
   D.META = { title: 'Clinic credit controls', version: 'Demo v1', date: 'Sep 24, 2026' };
   D.CLINIC = 'Mock Wellness Clinic';
+  /* A multi-location account. Each location (clinic) has its own card and its own backlog. */
+  D.LOCATIONS = [
+    { id: 4312, name: 'Mock Wellness Clinic', card: { brand: 'Visa', last4: '4242', exp: '08/27' } },
+    { id: 4318, name: 'Mock Wellness Clinic - Santa Monica', card: { brand: 'Mastercard', last4: '5454', exp: '11/28' } },
+  ];
 
-  /* Default limits from the ticket. The real values are super-admin settings. */
-  D.LIMITS = { failureCount: 3, dollarLimit: 500, retryHours: [24, 48, 72], perPage: 10, exportFrom: '2025-03-01' };
+  /* Only what clinics are shown. The pause thresholds are super-admin settings and stay out of clinic copy
+     and out of this file (Support, Sep 24: publishing them invites clinics to stay just under them). */
+  D.LIMITS = { retryHours: [24, 48, 72], perPage: 10, exportFrom: '2025-03-01' };
 
   /* The account states, in the order the ladder climbs. tries = the quick links in the scenario strip. */
   D.SCENARIOS = [
@@ -23,7 +29,7 @@
       what: 'Retries finished with 2 unpaid charges. Prescription exams are paused; Good Faith Exams still work.',
       tries: [['Send Exam Invite (Rx types locked)', 'invite'], ['Pay balance', 'card:pay']] },
     { id: 'blocked', label: 'Exams paused', short: 'Exams paused',
-      what: '5 unpaid charges ($217.95). Sending new exams is paused until the balance is paid.',
+      what: '5 unpaid charges ($424.95). Sending new exams is paused until the balance is paid.',
       tries: [['Send Exam Invite (opens the card screen)', 'invite'], ['Open Billing', 'go:billing']] },
     { id: 'backlog', label: '300 unpaid', short: '300 unpaid',
       what: 'A backlog of 300 unpaid charges at go-live. Billing pages 10 at a time, and the card screen shows 10 and links to the rest.',
@@ -37,11 +43,11 @@
   /* Clinic-facing decline wording. Gateway codes map onto these. */
   D.DECLINE = { insufficient: 'insufficient funds', expired: 'card expired', bank: 'declined by the bank' };
 
-  /* What each exam type costs in the demo. */
+  /* What each exam type costs in the demo: the exam fee and, for QualiphyRx, the medication. */
   D.CHARGE_TYPES = {
-    gfe: { description: 'Good Faith Exam', amount: 27.99 },
-    rx: { description: 'QualiphyRx consultation', amount: 49.99 },
-    uc: { description: 'Urgent care visit', amount: 39.99 },
+    gfe: { description: 'Good Faith Exam', fee: 27.99, med: 0 },
+    rx: { description: 'QualiphyRx consultation + medication', fee: 29.99, med: 89 },
+    uc: { description: 'Urgent care visit', fee: 39.99, med: 0 },
   };
 
   /* Test cards for the card form. Real card details can't be typed into this demo. */
@@ -88,24 +94,29 @@
       ['Pages, not a long list', 'Billing shows 10 charges per page, with the portal\'s existing page control (Medication Management). The card screen lists 10 and links to the rest.'],
       ['Export by time period', 'Billing gets a date-range filter and an Export button. It exports exactly what\'s filtered, in every status, including failed and collections charges.'],
       ['Support line', '"If you need more clarification on these charges, please contact support@qualiphy.me" on Billing and on the card screen.'],
+      ['Support: IDs and amounts', 'The exam fee and medication as separate amounts, the patient profile ID, and the Clinic ID on every row, so a screenshot is enough for Support to find the exam.'],
+      ['Support: location filter', 'Multi-location accounts filter charges by location. The balance and the card follow the filter, because each location has its own card.'],
+      ['Support: no thresholds', 'Clinic copy doesn\'t state the pause limits, so clinics can\'t aim just under them. The retry schedule is still shown.'],
     ],
     defaults: [
       'Patients see a neutral "online consultations aren\'t available" page that never mentions payment.',
       'Anyone logged into the clinic account can update the card, until roles land.',
       'One charge for the full balance.',
       'Clinics can pay early from Billing, or retry the card on file when the decline wasn\'t an expired card.',
-      '"In collections" charges show as such and are included in the payoff.',
+      '"In collections" charges show as such and are included in the payoff. No data flag exists for this yet (see the questions).',
       'Nothing is restricted while automatic retries are still running.',
       'Exams already in progress always finish; only new actions are refused.',
     ],
     questions: [
       ['Engineering', 'Should prescriptions pause at the first failed charge, or only after the 24/48/72-hour retries finish? The demo waits until retries are exhausted.'],
       ['Engineering', 'A 300-charge backlog is {backlog} in one charge, which many cards will refuse. Allow paying part of it, or send large balances to an invoice?'],
-      ['Product', 'Under the 3-charge / $500 limits a clinic is paused long before 300 charges. How many clinics start with a backlog on day one, and do they get notice first?'],
+      ['Product', 'Under the pause limits a clinic is paused long before 300 charges. How many clinics start with a backlog on day one, and do they get notice first?'],
       ['Product', 'Should the Billing export replace Settings › Export Billing, or both stay?'],
+      ['Engineering', 'Nothing marks a charge as "in collections" yet. Add a ledger status that Finance sets when they take a charge over, or drop "In collections" from the clinic view?'],
+      ['Engineering', 'Each location has its own card and backlog. Is the block per location (only the location that owes), or per account?'],
     ],
     engineering: [
-      ['API path', 'Return a refusal instead of the page: { "http_code": 402, "error_code": "CREDIT_CONTROL_BLOCK", "block_level": "gfe_only | full | hold", "balance_due": 217.95 }.'],
+      ['API path', 'Return a refusal instead of the page: { "http_code": 402, "error_code": "CREDIT_CONTROL_BLOCK", "block_level": "gfe_only | full | hold", "balance_due": 424.95 }.'],
       ['Paging', 'Server-side, 10 per page, sorted newest first; the filters (status, date range) go to the query. Reuse the Medication Management page control.'],
       ['Export', 'The existing billing export already takes a start and end date. Add a status filter and include failed and collections rows.'],
       ['Decline reasons', 'Map gateway codes to three clinic-facing reasons: insufficient funds, card expired, declined by the bank.'],
